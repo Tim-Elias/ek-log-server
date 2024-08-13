@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, Column, String, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import Parser
+import parser
 from apscheduler.schedulers.background import BackgroundScheduler
 import json
 from flask import Flask, jsonify
@@ -122,7 +122,7 @@ def fetch_and_store_data():
     payload = {'key1': 'value1', 'key2': 'value2'}
     headers = {'Content-Type': 'application/json'}
     output_file = 'cleaned_response.json'
-    Parser.post_and_process(url, payload, headers, output_file)
+    parser.post_and_process(url, payload, headers, output_file)
     load_data_from_json(output_file)
 
 
@@ -201,4 +201,4 @@ def get_records_by_uuid(uuid):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
