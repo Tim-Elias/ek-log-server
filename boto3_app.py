@@ -114,8 +114,8 @@ def post_request():
     try:
         #response = json.loads(data)
         response_body=data['data']
-        hash_string=hash_string(response_body,'sha256')
-        s3_file_key=f'{hash_string}'
+        hash=hash_string(response_body,'sha256')
+        s3_file_key=f'{hash}'
         #проверяем есть ли уже такой объект в бакете
         response = s3.list_objects_v2(Bucket=bucket_name)
         if not (bucket_name, s3_file_key):    
