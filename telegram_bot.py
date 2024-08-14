@@ -111,7 +111,8 @@ def post_request(qr_data, s3_file_key, headers):
 #загрузка данных на s3
 def post_s3(data, ext):
     try:
-        s3_file_key=f'{hash_string(data,'sha256')}.{ext}'
+        hash = hash_string(data,'sha256')
+        s3_file_key=f'{hash}.{ext}'
         #print(s3_file_key)
         #проверяем есть ли уже такой объект в бакете
         if not object_exists(bucket_name, s3_file_key):    
