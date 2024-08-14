@@ -119,7 +119,7 @@ def post_request():
         s3_file_key=f'{hash}'
         #проверяем есть ли уже такой объект в бакете
         response = s3.list_objects_v2(Bucket=bucket_name)
-        if not (bucket_name, s3_file_key):    
+        if not object_exists(bucket_name, s3_file_key):    
             s3.put_object(
                 Bucket=bucket_name,
                 Key=s3_file_key,
