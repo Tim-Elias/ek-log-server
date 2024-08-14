@@ -109,9 +109,10 @@ def post_request(qr_data, s3_file_key, headers):
 
 
 #загрузка данных на s3
-def post_s3(data):
+def post_s3(data, ext):
     try:
-        s3_file_key=hash_string(data,'sha256')
+        s3_file_key=f'{hash_string(data,'sha256')}.{ext}'
+        #print(s3_file_key)
         #проверяем есть ли уже такой объект в бакете
         if not object_exists(bucket_name, s3_file_key):    
             s3.put_object(
@@ -154,6 +155,8 @@ def handle_photo(message):
         # Получаем информацию о файле и его содержимом
         file_info = bot.get_file(message.photo[-1].file_id)
         file_path = file_info.file_path
+        # Определяем расширение файла
+        file_extension = file_path.split('.')[-1]
 
         # Скачиваем файл в память
         downloaded_file = bot.download_file(file_path)
@@ -178,7 +181,7 @@ def handle_photo(message):
             #print(response)
             if response.get('status')=='ok':
                 #print('ok')
-                status, s3_file_key=post_s3(base64_image)
+                status, s3_file_key=post_s3(base64_image, file_extension)
                 #print(status)
                 error=post_request(qr_data, s3_file_key, headers)
                 #print(error)
