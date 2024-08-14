@@ -94,11 +94,12 @@ def get_request(file_id):
     if not file_id:
         abort(400, description="Параметр 'file_id' обязателен.")
 
+    
+    if not object_exists(bucket_name, file_id):
+        abort(404, description="Объект не найден.")
+
     # Получаем содержимое объекта
     content = get_object_content(file_id)
-    
-    if content is None:
-        abort(404, description="Объект не найден.")
     
     # Возвращаем содержимое объекта в виде ответа
     return jsonify({'content': content})
@@ -125,10 +126,12 @@ def post_request():
                 Body=response_body.encode('utf-8'),  # Преобразуем строку в байты
                 ContentType='application/json'
             )
-            print(f'JSON-данные успешно загружены в {bucket_name}/{s3_file_key}')
+            #print(f'JSON-данные успешно загружены в {bucket_name}/{s3_file_key}')
+            response={'status' : 'created', 'data' : s3_file_key}
         else:
-            print('Такой файл уже существует')
-        return s3_file_key
+            #print('Такой файл уже существует')
+            response={'status' : 'exists', 'data' : s3_file_key}
+        return jsonify(response)
         # Возвращаем ответ от внешнего API клиенту
         #return jsonify(response.json()), response.status_code
         #вместо джейсона мы должны будем возвращать ключ после помещения файла в базу
