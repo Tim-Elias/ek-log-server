@@ -14,6 +14,8 @@ import hashlib
 from dotenv import load_dotenv
 import os
 
+load_dotenv()
+
 s3 = boto3.client(
         's3',
         endpoint_url=os.getenv('ENDPOINT_URL'),
