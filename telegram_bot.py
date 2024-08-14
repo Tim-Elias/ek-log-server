@@ -132,8 +132,8 @@ def post_s3(data):
         
 
 
-API_TOKEN='7034948472:AAHmY-Ycq5Lba-533cLcQ9SrxkOqJCSZslM'
-bot = telebot.TeleBot(API_TOKEN)
+api_token=os.getenv('API_TOKEN')
+bot = telebot.TeleBot(api_token)
 
 # Обработчик команды /start
 @bot.message_handler(commands=['start'])
