@@ -173,7 +173,7 @@ def handle_photo(message):
         # Обработка изображения
         qr_data=get_QR(cv_image)
         if qr_data==None:
-            bot.reply_to(message, f"Не смогу рапознать QR-код")
+            bot.reply_to(message, f"Не могу распознать QR-код")
         else:
             #print(qr_data)
             payloads={"Number" : qr_data}
