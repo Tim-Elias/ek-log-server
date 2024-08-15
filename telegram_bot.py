@@ -145,6 +145,7 @@ def resize_image(image, scale_factor=2.0):
     return resized_image
 
 def handle_image(message, is_document):
+
     try:
         if is_document:
             file_info = bot.get_file(message.document.file_id)
@@ -200,8 +201,10 @@ def handle_image(message, is_document):
 
     except Exception as e:
         #print(f"Ошибка: {e}")
-        bot.reply_to(message, "Произошла ошибка при обработке изображения.")
-
+        try:
+            bot.reply_to(message, "Произошла ошибка при обработке изображения.")
+        except:
+            print("Произошла ошибка при ответе на сообщение")
 
 
 tg_api_token=os.getenv('TG_API_TOKEN')
