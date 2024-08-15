@@ -13,6 +13,8 @@ import base64
 import hashlib
 from dotenv import load_dotenv
 import os
+import speech_recognition as sr
+from pydub import AudioSegment
 
 load_dotenv()
 
@@ -134,7 +136,13 @@ def post_s3(data, ext):
         #print({"error": str(e)}), 500
         return response
         
-
+def resize_image(image, scale_factor=2.0):
+    # Увеличиваем изображение в два раза
+    width = int(image.shape[1] * scale_factor)
+    height = int(image.shape[0] * scale_factor)
+    dim = (width, height)
+    resized_image = cv2.resize(image, dim, interpolation=cv2.INTER_CUBIC)
+    return resized_image
 
 def handle_image(message, is_document):
     try:
@@ -159,6 +167,7 @@ def handle_image(message, is_document):
         # Преобразование изображения в Base64
         base64_image = convert_image_to_base64(cv_image)
         #print(base64_image)
+        cv_image=resize_image(cv_image, scale_factor=2.0)
         # Обработка изображения
         qr_data=get_QR(cv_image)
         if qr_data==None:
@@ -222,7 +231,24 @@ def handle_document(message):
     else:
         bot.reply_to(message, "Пожалуйста, отправьте изображение в формате JPG или PNG.")
 
-    
+@bot.message_handler(content_types=['voice', 'audio'])
+def handle_audio(message):
+    try:
+        if message.content_type == 'voice':
+            # Работа с голосовыми сообщениями
+            file_info = bot.get_file(message.voice.file_id)
+            file_format = 'ogg'
+        elif message.content_type == 'audio':
+            # Работа с аудиофайлами
+            file_info = bot.get_file(message.audio.file_id)
+            file_format = message.audio.mime_type.split('/')[1]  # Определяем формат аудиофайла
+        # Скачиваем файл в память
+        file_path = file_info.file_path
+        downloaded_file = bot.download_file(file_path)
+        bot.reply_to(message, f"Получено аудио в формате: {file_format}")
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        bot.reply_to(message, f"Произошла ошибка: {e}")
 
 # Запуск бота
 bot.polling()
