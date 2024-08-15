@@ -136,25 +136,14 @@ def post_s3(data, ext):
         
 
 
-api_token=os.getenv('API_TOKEN')
-bot = telebot.TeleBot(api_token)
-
-# Обработчик команды /start
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "Привет! Я ваш бот. Чем могу помочь?")
-
-# Обработчик текстовых сообщений
-@bot.message_handler(func=lambda message: True)
-def echo_all(message):
-    bot.reply_to(message, message.text)
-
-# Обработчик фотографий
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
+def handle_image(message, is_document):
     try:
+        if is_document:
+            file_info = bot.get_file(message.document.file_id)
+        else:
+            file_info = bot.get_file(message.photo[-1].file_id)
         # Получаем информацию о файле и его содержимом
-        file_info = bot.get_file(message.photo[-1].file_id)
+        #file_info = bot.get_file(message.photo[-1].file_id)
         file_path = file_info.file_path
         # Определяем расширение файла
         file_extension = file_path.split('.')[-1]
@@ -203,6 +192,35 @@ def handle_photo(message):
     except Exception as e:
         #print(f"Ошибка: {e}")
         bot.reply_to(message, "Произошла ошибка при обработке изображения.")
+
+
+
+tg_api_token=os.getenv('TG_API_TOKEN')
+bot = telebot.TeleBot(tg_api_token)
+
+# Обработчик команды /start
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Привет! Я ваш бот. Чем могу помочь?")
+
+# Обработчик текстовых сообщений
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    bot.reply_to(message, message.text)
+
+# Обработчик фотографий
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    handle_image(message, is_document=False)
+
+@bot.message_handler(content_types=['document'])
+def handle_document(message):
+    # Проверяем, является ли документ изображением
+    file_name = message.document.file_name
+    if file_name.lower().endswith(('.jpg', '.jpeg', '.png')):
+        handle_image(message, is_document=True)
+    else:
+        bot.reply_to(message, "Пожалуйста, отправьте изображение в формате JPG или PNG.")
 
     
 
