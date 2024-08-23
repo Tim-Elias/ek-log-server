@@ -4,6 +4,7 @@ from PIL import Image
 import io
 import numpy as np
 import telebot
+from telebot import types
 import requests
 import json
 from botocore.client import Config
@@ -13,8 +14,7 @@ import base64
 import hashlib
 from dotenv import load_dotenv
 import os
-import speech_recognition as sr
-from pydub import AudioSegment
+
 
 load_dotenv()
 
@@ -33,7 +33,9 @@ bucket_name = os.getenv('BUCKET_NAME')
 
 url_1=os.getenv('URL_1')
 url_2=os.getenv('URL_2')
-
+invoice=None
+base64_image=None
+file_extension=None
 
 #распознавание qr-code
 def get_QR(image):
@@ -94,13 +96,14 @@ def hash_string(data: str, algorithm: str = 'sha256') -> str:
     # Получаем хэш-сумму в виде шестнадцатеричной строки
     return hash_obj.hexdigest()
 
-def post_request(qr_data, s3_file_key, headers):
+def post_request(qr_data, s3_file_key, status, headers):
     url=url_2
-    payload = {'Number' : qr_data, 'hash' : s3_file_key}
+    payload = {"Number" : f"{qr_data}", "hash" : f"{s3_file_key}", "status" : f"{status}"}
+    print(payload)
     response = requests.post(url, data=json.dumps(payload), headers=headers)
     if response.status_code == 200:
         try:
-            #print('успешно')
+            print('успешно 1c')
             return response.json()
         except ValueError:
             #print("Response is not a valid JSON")
@@ -126,8 +129,10 @@ def post_s3(data, ext):
                 )
             response={'status' : 'created', 'data' : s3_file_key}
             #print('успешно загружено')
+            print(s3_file_key)
             return response, s3_file_key
         else:
+            print(s3_file_key)
             response={'status' : 'exists', 'data' : s3_file_key}
             #print('уже сущуствует')
             return response, s3_file_key
@@ -144,8 +149,33 @@ def resize_image(image, scale_factor=2.0):
     resized_image = cv2.resize(image, dim, interpolation=cv2.INTER_CUBIC)
     return resized_image
 
-def handle_image(message, is_document):
+def invoice_processing(message, status):
+    global invoice, base64_image, file_extension
+    payloads={"Number" : invoice}
+    headers = {'Content-Type': 'application/json'}
+    response=post_and_process(payloads, headers)
+    if response.get('status')=='ok':
+        status_s3, s3_file_key=post_s3(base64_image, file_extension)
+        result=post_request(invoice, s3_file_key, status, headers)
+        print(result)
+        #print(status_s3)
+        if result.get('error')==False:
+            if status_s3['status']=='created':
+                bot.send_message(message, f"Скан успешно сохранен и привязан к накладной '{invoice}'. {result.get('data')}")
+            elif status_s3['status']=='exists':
+                bot.send_message(message, f"Скан уже существует и привязан к накладной '{invoice}'. {result.get('data')}")
+            else:
+                #print('Ошибка при записи в s3')
+                bot.send_message(message, f"Ошибка при записи в хранилище s3")
+        else:
+            #print('Ошибка при записи в 1c')
+            error_msg=result.get('error_msg')
+            bot.send_message(message, f"Ошибка при записи в 1с. Error: {error_msg}")
+    else:
+        bot.send_message(message, f"Ошибка при поиске накладной. Error: {response.get('data')}")
 
+def handle_image(message, is_document):
+    global invoice, base64_image, file_extension
     try:
         if is_document:
             file_info = bot.get_file(message.document.file_id)
@@ -156,10 +186,8 @@ def handle_image(message, is_document):
         file_path = file_info.file_path
         # Определяем расширение файла
         file_extension = file_path.split('.')[-1]
-
         # Скачиваем файл в память
         downloaded_file = bot.download_file(file_path)
-
         image_stream = io.BytesIO(downloaded_file)
         pil_image = Image.open(image_stream)
         # Проверяем формат изображения
@@ -170,34 +198,19 @@ def handle_image(message, is_document):
         #print(base64_image)
         cv_image=resize_image(cv_image, scale_factor=2.0)
         # Обработка изображения
-        qr_data=get_QR(cv_image)
-        if qr_data==None:
+        invoice=get_QR(cv_image)
+        if invoice==None:
             bot.reply_to(message, f"Не могу распознать QR-код")
         else:
-            #print(qr_data)
-            payloads={"Number" : qr_data}
-            headers = {'Content-Type': 'application/json'}
-            response=post_and_process(payloads, headers)
-            #print(response)
-            if response.get('status')=='ok':
-                #print('ok')
-                status, s3_file_key=post_s3(base64_image, file_extension)
-                #print(status)
-                error=post_request(qr_data, s3_file_key, headers)
-                #print(error)
-                if error.get('error')==False:
-                    #print('error false')
-                    if status['status']=='created':
-                        bot.reply_to(message, f"Скан успешно сохранен и привязан к накладной '{qr_data}'")
-                    elif status['status']=='exists':
-                        bot.reply_to(message, f"Скан уже существует и привязан к накладной '{qr_data}'")
-                    else:
-                        bot.reply_to(message, f"Ошибка при записи в хранилище")
-                else:
-                    #print('error не false')
-                    bot.reply_to(message, f"Ошибка при записи в хранилище")
-            else:
-                bot.reply_to(message, f"Ошибка при записи в хранилище. Error: {response.get('data')}")
+            # Отправляем сообщение с выбором дальнейших действий
+            markup = types.ReplyKeyboardMarkup(row_width=3)
+            button1 = types.KeyboardButton("Доставка накладной")
+            button2 = types.KeyboardButton("Получение накладной")
+            button3 = types.KeyboardButton("Прочее")
+            markup.add(button1, button2, button3)
+
+            bot.send_message(message.chat.id, f"Выберите действие с накладной {invoice}:", reply_markup=markup)
+            
 
     except Exception as e:
         #print(f"Ошибка: {e}")
@@ -215,10 +228,6 @@ bot = telebot.TeleBot(tg_api_token)
 def send_welcome(message):
     bot.reply_to(message, "Привет! Я ваш бот. Чем могу помочь?")
 
-# Обработчик текстовых сообщений
-@bot.message_handler(func=lambda message: True)
-def echo_all(message):
-    bot.reply_to(message, message.text)
 
 # Обработчик фотографий
 @bot.message_handler(content_types=['photo'])
@@ -234,24 +243,37 @@ def handle_document(message):
     else:
         bot.reply_to(message, "Пожалуйста, отправьте изображение в формате JPG или PNG.")
 
-@bot.message_handler(content_types=['voice', 'audio'])
-def handle_audio(message):
-    try:
-        if message.content_type == 'voice':
-            # Работа с голосовыми сообщениями
-            file_info = bot.get_file(message.voice.file_id)
-            file_format = 'ogg'
-        elif message.content_type == 'audio':
-            # Работа с аудиофайлами
-            file_info = bot.get_file(message.audio.file_id)
-            file_format = message.audio.mime_type.split('/')[1]  # Определяем формат аудиофайла
-        # Скачиваем файл в память
-        file_path = file_info.file_path
-        downloaded_file = bot.download_file(file_path)
-        bot.reply_to(message, f"Получено аудио в формате: {file_format}")
-    except Exception as e:
-        print(f"Ошибка: {e}")
-        bot.reply_to(message, f"Произошла ошибка: {e}")
+# Обработка выбора кнопки
+@bot.message_handler(func=lambda message: message.text in ["Доставка накладной", "Получение накладной", "Прочее"])
+def handle_action(message):
+    global invoice, base64_image, file_extension
+    
+    if invoice is None:
+        bot.send_message(message.chat.id, "Извините, накладная не найдена. Отправьте заново.")
+        return
+
+    if message.text == "Доставка накладной":
+        bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} доставлена.")
+        # Логика для Действия 1
+        status="delivered"
+        invoice_processing(message.chat.id, status)
+
+    elif message.text == "Получение накладной":
+        bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} получена.")
+        # Логика для Действия 2
+        status="received"
+        invoice_processing(message.chat.id, status)
+
+    elif message.text == "Прочее":
+        bot.send_message(message.chat.id, "Вы выбрали прочее.")
+        status=""
+        invoice_processing(message.chat.id, status)
+        #bot.send_message(message.chat.id, "Вы выбрали Действие 3.")
+        # Логика для Действия 3
+        # Пример: сохранение файла или дальнейшая обработка
+
+    # После действия убираем клавиатуру
+    bot.send_message(message.chat.id, "Действие с накладной завершено.", reply_markup=types.ReplyKeyboardRemove())
 
 # Запуск бота
 bot.polling()
