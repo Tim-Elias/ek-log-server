@@ -205,8 +205,8 @@ def process_image(user_id, image_id):
         #print('выбор кнопок начинается')
         if image_data:
             markup = types.ReplyKeyboardMarkup(row_width=3)
-            button1 = types.KeyboardButton("Доставлено получателю")
-            button2 = types.KeyboardButton("Получено от отправителя")
+            button1 = types.KeyboardButton("Получено от отправителя")
+            button2 = types.KeyboardButton("Доставлено получателю")
             button3 = types.KeyboardButton("Прочее")
             markup.add(button1, button2, button3)
             invoice=image_data['invoice']
@@ -300,7 +300,7 @@ def handle_document(message):
         bot.reply_to(message, "Пожалуйста, отправьте изображение в формате JPG или PNG.")
 
 # Обработка выбора кнопки
-@bot.message_handler(func=lambda message: message.text in ["Доставлено получателю", "Получено от отправителя", "Прочее"])
+@bot.message_handler(func=lambda message: message.text in ["Получено от отправителя", "Доставлено получателю", "Прочее"])
 def handle_action(message):
     user_id = message.chat.id
     
@@ -314,16 +314,16 @@ def handle_action(message):
         invoice=image_data['invoice']
         base64_image=image_data['base64_image']
         file_extension=image_data['file_extension']
-        if message.text == "Доставлено получателю":
-            bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} доставлена.")
+        if message.text == "Получено от отправителя":
+            bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} получена.")
             # Логика для Действия 1
-            status="delivered"
+            status="received"
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
 
-        elif message.text == "Получено от отправителя":
-            bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} получена.")
+        elif message.text == "Доставлено получателю":
+            bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} доставлена.")
             # Логика для Действия 2
-            status="received"
+            status="delivered"
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
 
         elif message.text == "Прочее":
