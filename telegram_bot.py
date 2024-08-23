@@ -179,13 +179,19 @@ def invoice_processing(message, invoice, base64_image, file_extension, status):
         if response.get('status')=='ok':
             status_s3, s3_file_key=post_s3(base64_image, file_extension)
             result=post_request(invoice, s3_file_key, status, headers)
+            if status=='delivered':
+                bot_message=f"Вы указали, что накладная {invoice} доставлена."
+            elif status=='received':
+                bot_message=f"Вы указали, что накладная {invoice} получена."
+            else:
+                bot_message=f"Вы указали прочее."
             print(result)
             #print(status_s3)
             if result.get('error')==False:
                 if status_s3['status']=='created':
-                    bot.send_message(message, f"Скан успешно сохранен и привязан к накладной '{invoice}'. {result.get('data')}")
+                    bot.send_message(message, f"{bot_message} Скан успешно сохранен и привязан к накладной '{invoice}'. {result.get('data')}")
                 elif status_s3['status']=='exists':
-                    bot.send_message(message, f"Скан уже существует и привязан к накладной '{invoice}'. {result.get('data')}")
+                    bot.send_message(message, f"{bot_message} Скан уже существует и привязан к накладной '{invoice}'. {result.get('data')}")
                 else:
                     #print('Ошибка при записи в s3')
                     bot.send_message(message, f"Ошибка при записи в хранилище s3")
@@ -315,19 +321,19 @@ def handle_action(message):
         base64_image=image_data['base64_image']
         file_extension=image_data['file_extension']
         if message.text == "Получено от отправителя":
-            bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} получена.")
+            #bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} получена.")
             # Логика для Действия 1
             status="received"
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
 
         elif message.text == "Доставлено получателю":
-            bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} доставлена.")
+            #bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} доставлена.")
             # Логика для Действия 2
             status="delivered"
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
 
         elif message.text == "Прочее":
-            bot.send_message(message.chat.id, "Вы выбрали прочее.")
+            #bot.send_message(message.chat.id, "Вы выбрали прочее.")
             status=""
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
             
@@ -342,7 +348,7 @@ def handle_action(message):
             process_next_image(user_id)
         else:
             # Убираем клавиатуру после выполнения действий
-            bot.send_message(message.chat.id, "Действие с накладными завершено.", reply_markup=types.ReplyKeyboardRemove())
+            #bot.send_message(message.chat.id, "Действие с накладными завершено.", reply_markup=types.ReplyKeyboardRemove())
             user_states[user_id] = {}
     
     
