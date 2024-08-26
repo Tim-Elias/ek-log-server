@@ -34,9 +34,6 @@ bucket_name = os.getenv('BUCKET_NAME')
 
 url_1=os.getenv('URL_1')
 url_2=os.getenv('URL_2')
-invoice=None
-base64_image=None
-file_extension=None
 
 # Словарь для хранения обработанных изображений для каждого пользователя
 user_images = {}
@@ -59,15 +56,13 @@ def get_QR(image):
         return qr_data
     else:
         print("QR-код не найден")
-
+#преобразование bpj,hf;tybz d ифыу64
 def convert_image_to_base64(image):
     # Преобразование изображения OpenCV в формат байтов
     _, buffer = cv2.imencode('.jpg', image)
     # Преобразование байтов в строку Base64
     base64_str = base64.b64encode(buffer).decode('utf-8')
     return base64_str
-
-
 #отправление пост запроса
 def post_and_process(payload, headers):
     """ Perform POST request and process the response. """
@@ -85,7 +80,7 @@ def post_and_process(payload, headers):
             print(f"Request failed with status code {response.status_code}")
     except requests.RequestException as e:
         print(f"Request error: {e}")
-
+#существует ли уже такой объект в хранилище
 def object_exists(bucket: str, key: str) -> bool:
     try:
         # Пытаемся получить метаданные объекта
@@ -98,7 +93,7 @@ def object_exists(bucket: str, key: str) -> bool:
         # Другие ошибки (например, проблемы с правами доступа) могут также возникнуть
         else:
             raise
-
+#преобразование в хэш
 def hash_string(data: str, algorithm: str = 'sha256') -> str:
     # Создаем объект хэш-функции
     hash_obj = hashlib.new(algorithm)
@@ -106,7 +101,7 @@ def hash_string(data: str, algorithm: str = 'sha256') -> str:
     hash_obj.update(data.encode('utf-8'))
     # Получаем хэш-сумму в виде шестнадцатеричной строки
     return hash_obj.hexdigest()
-
+#запрос в 1с с данными
 def post_request(qr_data, s3_file_key, status, headers):
     url=url_2
     payload = {"Number" : f"{qr_data}", "hash" : f"{s3_file_key}", "status" : f"{status}"}
@@ -122,8 +117,7 @@ def post_request(qr_data, s3_file_key, status, headers):
     else:
         #print(f"Request failed with status code {response.status_code}")
         return {'error' : "Request failed"}
-
-
+#запуск таймера для бота
 def start_timer(user_id):
     """Запускает таймер для пользователя."""
     if user_id in user_timers:
@@ -132,7 +126,6 @@ def start_timer(user_id):
     # Таймер ждет указанное время, а затем запускает обработку изображений
     user_timers[user_id] = threading.Timer(WAIT_TIME, process_next_image, args=[user_id])
     user_timers[user_id].start()
-
 #загрузка данных на s3
 def post_s3(data, ext):
     try:
@@ -149,10 +142,10 @@ def post_s3(data, ext):
                 )
             response={'status' : 'created', 'data' : s3_file_key}
             #print('успешно загружено')
-            print(s3_file_key)
+            #print(s3_file_key)
             return response, s3_file_key
         else:
-            print(s3_file_key)
+            #print(s3_file_key)
             response={'status' : 'exists', 'data' : s3_file_key}
             #print('уже сущуствует')
             return response, s3_file_key
@@ -160,7 +153,7 @@ def post_s3(data, ext):
         response={'status' : 'error', 'error' : str(e)}
         #print({"error": str(e)}), 500
         return response
-        
+#изменение размера изображения
 def resize_image(image, scale_factor=2.0):
     # Увеличиваем изображение в два раза
     width = int(image.shape[1] * scale_factor)
@@ -168,60 +161,82 @@ def resize_image(image, scale_factor=2.0):
     dim = (width, height)
     resized_image = cv2.resize(image, dim, interpolation=cv2.INTER_CUBIC)
     return resized_image
-
+#обработка накладной
 def invoice_processing(message, invoice, base64_image, file_extension, status):
-    if invoice==None:
-            bot.reply_to(message, f"Не могу распознать QR-код")
+    status_s3, s3_file_key=post_s3(base64_image, file_extension)
+    headers = {'Content-Type': 'application/json'}
+    result=post_request(invoice, s3_file_key, status, headers)
+    if status=='delivered':
+        bot_message=f"Вы указали, что накладная {invoice} доставлена."
+    elif status=='received':
+        bot_message=f"Вы указали, что накладная {invoice} получена."
     else:
-        payloads={"Number" : invoice}
-        headers = {'Content-Type': 'application/json'}
-        response=post_and_process(payloads, headers)
-        if response.get('status')=='ok':
-            status_s3, s3_file_key=post_s3(base64_image, file_extension)
-            result=post_request(invoice, s3_file_key, status, headers)
-            if status=='delivered':
-                bot_message=f"Вы указали, что накладная {invoice} доставлена."
-            elif status=='received':
-                bot_message=f"Вы указали, что накладная {invoice} получена."
-            else:
-                bot_message=f"Вы указали прочее."
-            print(result)
-            #print(status_s3)
-            if result.get('error')==False:
-                if status_s3['status']=='created':
-                    bot.send_message(message, f"{bot_message} Скан успешно сохранен и привязан к накладной '{invoice}'. {result.get('data')}")
-                elif status_s3['status']=='exists':
-                    bot.send_message(message, f"{bot_message} Скан уже существует и привязан к накладной '{invoice}'. {result.get('data')}")
-                else:
-                    #print('Ошибка при записи в s3')
-                    bot.send_message(message, f"Ошибка при записи в хранилище s3")
-            else:
-                #print('Ошибка при записи в 1c')
-                error_msg=result.get('error_msg')
-                bot.send_message(message, f"Ошибка при записи в 1с. Error: {error_msg}")
+        bot_message="Вы указали прочее."
+    #print(result)
+    #print(status_s3)
+    if result.get('error')==False:
+        if status_s3['status']=='created':
+            bot.send_message(message, f"{bot_message} Скан успешно сохранен и привязан к накладной '{invoice}'. {result.get('data')}")
+        elif status_s3['status']=='exists':
+            bot.send_message(message, f"{bot_message} Скан уже существует и привязан к накладной '{invoice}'. {result.get('data')}")
         else:
-            bot.send_message(message, f"Ошибка при поиске накладной. Error: {response.get('data')}")
-
+            #print('Ошибка при записи в s3')
+            bot.send_message(message, f"Ошибка при записи в хранилище s3")
+    else:
+        #print('Ошибка при записи в 1c')
+        error_msg=result.get('error_msg')
+        bot.send_message(message, f"Ошибка при записи в 1с. Error: {error_msg}")
+#обработка изображения
 def process_image(user_id, image_id):
     """Функция для обработки изображений после завершения таймера ожидания."""
     #print('запуск process_image')
     if user_id in user_images and user_images[user_id]:
         # Отправляем сообщение с выбором дальнейших действий
         image_data = user_images[user_id].get(image_id)
-        #print('выбор кнопок начинается')
-        if image_data:
-            markup = types.ReplyKeyboardMarkup(row_width=3)
-            button1 = types.KeyboardButton("Получено от отправителя")
-            button2 = types.KeyboardButton("Доставлено получателю")
-            button3 = types.KeyboardButton("Прочее")
-            markup.add(button1, button2, button3)
-            invoice=image_data['invoice']
-            bot.send_message(user_id, f"Выберите действие с накладной {invoice}:", reply_markup=markup)
-            bot.send_photo(user_id, image_data['image'])
-            user_states[user_id] = {'current_image': image_id}
+        invoice=image_data['invoice']
+        #current_image_id = user_states[user_id]['current_image']
+        user_states[user_id] = {'current_image': image_id}
+        current_image_id = user_states[user_id]['current_image']
+        #invoice=invoice.get('Number')
+        if invoice==None:
+            bot.send_message(user_id, f"Не могу распознать QR-код")
+            del user_images[user_id][current_image_id]
+            # Проверяем, есть ли еще изображения для обработки
+            if user_images[user_id]:
+                # Запускаем обработку следующего изображения
+                process_next_image(user_id)
+            else:
+                user_states[user_id] = {}
+        else:
+            payloads={"Number" : invoice}
+            #print(payloads)
+            headers = {'Content-Type': 'application/json'}
+            response=post_and_process(payloads, headers)
+            #print(response)
+            if response.get('status')=='ok':
+                if image_data:
+                    markup = types.ReplyKeyboardMarkup(row_width=3)
+                    button1 = types.KeyboardButton("Получено от отправителя")
+                    button2 = types.KeyboardButton("Доставлено получателю")
+                    button3 = types.KeyboardButton("Прочее")
+                    markup.add(button1, button2, button3)
+                    bot.send_message(user_id, f"Выберите действие с накладной {invoice}:", reply_markup=markup)
+            else:
+                #print('Накладная не найдена')
+                bot.send_message(user_id, f"Накладная {invoice} не найдена.")
+                # Удаляем текущее изображение из списка
+                del user_images[user_id][current_image_id]
+                # Проверяем, есть ли еще изображения для обработки
+                if user_images[user_id]:
+                    # Запускаем обработку следующего изображения
+                    process_next_image(user_id)
+                else:
+                    #bot.send_message(message.chat.id, reply_markup=types.ReplyKeyboardRemove())
+                    user_states[user_id] = {}
+                    
     else:
         bot.send_message(user_id, "Изображения не найдены, отправьте хотя бы одно.")
-
+#запуск обработки следующего изображения
 def process_next_image(user_id):
     """Функция для обработки следующего изображения."""
     if user_id in user_images and user_images[user_id]:
@@ -233,7 +248,7 @@ def process_next_image(user_id):
             process_image(user_id, current_image_id)
         else:
             bot.send_message(user_id, "Изображения не найдены, отправьте хотя бы одно.")
-
+#занесение данных об изображении в список изображений
 def handle_image(message, user_id, is_document):
     # Если пользователь отправляет первое изображение, создаем пустой словарь
     if user_id not in user_images:
@@ -251,52 +266,63 @@ def handle_image(message, user_id, is_document):
         # Скачиваем файл в память
         downloaded_file = bot.download_file(file_path)
         image_stream = io.BytesIO(downloaded_file)
-        pil_image = Image.open(image_stream)
-        # Проверяем формат изображения
-        pil_image = pil_image.convert("RGB")
-        cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-        # Преобразование изображения в Base64
-        base64_image = convert_image_to_base64(cv_image)
-        cv_image=resize_image(cv_image, scale_factor=2.0)
-        # Обработка изображения
-        invoice=get_QR(cv_image)
-        print('тут все ок с куаром')
-        # Сохраняем изображение и его метаданные
-        image_id = len(user_images[user_id]) + 1
+        try:
+            pil_image = Image.open(image_stream)
+            # Проверяем формат изображения
+            pil_image = pil_image.convert("RGB")
+            cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+            # Преобразование изображения в Base64
+            base64_image = convert_image_to_base64(cv_image)
+            cv_image=resize_image(cv_image, scale_factor=2.0)
+            # Обработка изображения
+            invoice=get_QR(cv_image)
+            #print('тут все ок с куаром')
+            # Сохраняем изображение и его метаданные
+            image_id = len(user_images[user_id]) + 1
 
-        user_images[user_id][image_id]={
-                "invoice" : invoice,
-                "file_extension" : file_extension,
-                "base64_image" : base64_image,
-                "image" : downloaded_file
-            }
-        print('handle_image работает нормально')
-        start_timer(user_id)
+            user_images[user_id][image_id]={
+                    "invoice" : invoice,
+                    "file_extension" : file_extension,
+                    "base64_image" : base64_image,
+                }
+            #print('handle_image работает нормально')
+            start_timer(user_id)
+        finally:
+            # Закрываем изображение и поток
+            pil_image.close()
+            image_stream.close()
     except Exception as e:
         #print(f"Ошибка: {e}")
         try:
             bot.reply_to(message, "Произошла ошибка при обработке изображения.")
         except:
             print("Произошла ошибка при ответе на сообщение")
+    finally:
+    # Очищаем объекты для освобождения памяти
+        del downloaded_file, image_stream, pil_image, cv_image
 
-
+#подготовка бота
 tg_api_token=os.getenv('TG_API_TOKEN')
 bot = telebot.TeleBot(tg_api_token)
 
 # Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    user_tg_id = message.from_user.id
+    #bot.reply_to(message, f"Ваш ID: {user_tg_id}")
     bot.reply_to(message, "Привет! Я ваш бот. Чем могу помочь?")
 
 
 # Обработчик фотографий
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
+    user_tg_id = message.from_user.id
     user_id = message.chat.id
     handle_image(message, user_id, is_document=False)
-
+#обработчик документов
 @bot.message_handler(content_types=['document'])
 def handle_document(message):
+    user_tg_id = message.from_user.id
     user_id = message.chat.id
     # Проверяем, является ли документ изображением
     file_name = message.document.file_name
@@ -309,11 +335,9 @@ def handle_document(message):
 @bot.message_handler(func=lambda message: message.text in ["Получено от отправителя", "Доставлено получателю", "Прочее"])
 def handle_action(message):
     user_id = message.chat.id
-    
     if user_id not in user_states or 'current_image' not in user_states[user_id]:
         bot.send_message(message.chat.id, "Извините, изображения не найдены. Отправьте новые.")
         return
-
     current_image_id = user_states[user_id]['current_image']
     if user_id in user_images and current_image_id in user_images[user_id]:
         image_data = user_images[user_id][current_image_id]
@@ -321,37 +345,24 @@ def handle_action(message):
         base64_image=image_data['base64_image']
         file_extension=image_data['file_extension']
         if message.text == "Получено от отправителя":
-            #bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} получена.")
-            # Логика для Действия 1
             status="received"
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
-
         elif message.text == "Доставлено получателю":
-            #bot.send_message(message.chat.id, f"Вы указали, что накладная {invoice} доставлена.")
-            # Логика для Действия 2
             status="delivered"
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
-
         elif message.text == "Прочее":
-            #bot.send_message(message.chat.id, "Вы выбрали прочее.")
             status=""
             invoice_processing(message.chat.id, invoice, base64_image, file_extension, status)
-            
-            # Логика для Действия 3
-            
         # Удаляем текущее изображение из списка
         del user_images[user_id][current_image_id]
-
         # Проверяем, есть ли еще изображения для обработки
         if user_images[user_id]:
             # Запускаем обработку следующего изображения
             process_next_image(user_id)
         else:
-            # Убираем клавиатуру после выполнения действий
-            #bot.send_message(message.chat.id, "Действие с накладными завершено.", reply_markup=types.ReplyKeyboardRemove())
             user_states[user_id] = {}
+            #bot.send_message(message.chat.id, "Клавиатура убрана", reply_markup=types.ReplyKeyboardRemove())
     
     
-
 # Запуск бота
 bot.polling()
