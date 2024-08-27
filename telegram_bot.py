@@ -161,6 +161,16 @@ def resize_image(image, scale_factor=2.0):
     dim = (width, height)
     resized_image = cv2.resize(image, dim, interpolation=cv2.INTER_CUBIC)
     return resized_image
+#получение номера накладной через gpt
+def invoice_gpt(base64_image):
+    headers={'Content-Type': 'application/json'}
+    url="http://147.45.226.28:5011/post-image/"
+    payload={"base64_image" : base64_image}
+    response=requests.post(url,data=json.dumps(payload),headers=headers)
+    print(response.json())
+    #invoice_data=response.json()
+    #invoice=invoice_data['number']
+    return response.json()
 #обработка накладной
 def invoice_processing(message, invoice, base64_image, file_extension, status):
     status_s3, s3_file_key=post_s3(base64_image, file_extension)
@@ -194,12 +204,20 @@ def process_image(user_id, image_id):
         # Отправляем сообщение с выбором дальнейших действий
         image_data = user_images[user_id].get(image_id)
         invoice=image_data['invoice']
+        base64_image=image_data['base64_image']
         #current_image_id = user_states[user_id]['current_image']
         user_states[user_id] = {'current_image': image_id}
         current_image_id = user_states[user_id]['current_image']
         #invoice=invoice.get('Number')
         if invoice==None:
-            bot.send_message(user_id, f"Не могу распознать QR-код")
+            invoice_data=invoice_gpt(base64_image)
+            invoice=invoice_data['number']
+            error=invoice_data['error']
+        if invoice=="Номер накладной отсутствует":
+            if error:
+                bot.send_message(user_id, "Это не курьерская накладная.")
+            else:
+                bot.send_message(user_id, f"Не удалось распознать номер.")
             del user_images[user_id][current_image_id]
             # Проверяем, есть ли еще изображения для обработки
             if user_images[user_id]:
@@ -279,7 +297,6 @@ def handle_image(message, user_id, is_document):
             #print('тут все ок с куаром')
             # Сохраняем изображение и его метаданные
             image_id = len(user_images[user_id]) + 1
-
             user_images[user_id][image_id]={
                     "invoice" : invoice,
                     "file_extension" : file_extension,
@@ -292,7 +309,7 @@ def handle_image(message, user_id, is_document):
             pil_image.close()
             image_stream.close()
     except Exception as e:
-        #print(f"Ошибка: {e}")
+        print(f"Ошибка: {e}")
         try:
             bot.reply_to(message, "Произошла ошибка при обработке изображения.")
         except:
@@ -362,7 +379,7 @@ def handle_action(message):
         else:
             user_states[user_id] = {}
             #bot.send_message(message.chat.id, "Клавиатура убрана", reply_markup=types.ReplyKeyboardRemove())
-    
+
     
 # Запуск бота
 bot.polling()
