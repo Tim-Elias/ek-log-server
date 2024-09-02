@@ -66,12 +66,14 @@ Session = sessionmaker(bind=engine)
 session = Session()
 Base = sqlalchemy.orm.declarative_base()
 
+
 # Определение модели для таблицы user_records
 class DataRecord(Base):
     __tablename__ = 'user_records_cars'
     
     user_id = Column(String, primary_key=True)
     thread_id = Column(String)
+
 #Определение модели для таблицы tokens
 class ThreadRecord(Base):
     __tablename__ = 'tokens_cars'
@@ -84,8 +86,10 @@ class ThreadRecord(Base):
     model = Column(String)
     date = Column(Date, default=lambda: datetime.now(timezone.utc).date())
     time = Column(Time, default=lambda: datetime.now(timezone.utc).time())
+
 # Создание таблицы в базе данных (если она еще не создана)
 Base.metadata.create_all(engine)
+
 #добавление данных в таблицу tokens
 def add_thread_record(data):
     try:
@@ -103,6 +107,7 @@ def add_thread_record(data):
     except Exception as e:
         print(f"An error occurred: {e}")
         session.rollback()
+
 # Добавление новых данных в таблицу user_records
 def add_data_record(data):
     try:
@@ -116,11 +121,13 @@ def add_data_record(data):
     except Exception as e:
         print(f"An error occurred: {e}")
         session.rollback()
+
 #класс BytesIO с именем
 class NamedBytesIO(BytesIO):
     def __init__(self, initial_bytes, name):
         super().__init__(initial_bytes)
         self.name = name
+
 #транскрибация аудио
 def transcribe_audio(audio, file_format):
     # Create a BytesIO object with a name attribute
@@ -141,6 +148,7 @@ def transcribe_audio(audio, file_format):
     finally:
         # Закрываем файл BytesIO
         audio_file.close()
+
 #работа с изображением
 def handle_image(message, user_id, thread_id, is_document):
     try:
@@ -177,6 +185,7 @@ def handle_image(message, user_id, thread_id, is_document):
     except Exception as e:
         print(f"Ошибка: {e}")
         bot.reply_to(message, f"Произошла ошибка: {e}")
+
 #запускаем новый ран с user_input
 def create_run(message, user_input, thread_id, user_id):
     # Добавление сообщения пользователя в поток
@@ -252,12 +261,14 @@ def create_run(message, user_input, thread_id, user_id):
     else:
         response = "Ошибка получения ответа от помощника."
     return response, is_put
+
 #получаем данные для аутентификации в гугле
 def get_credentials():
     flow = InstalledAppFlow.from_client_secrets_file(
         'credentials.json', SCOPES)
     creds = flow.run_local_server(port=63515)  # Убедитесь, что порт совпадает
     return creds
+
 #добавление данных из функции в гугл таблицы
 def put_data_into_sheets(message, thread_id, arguments):
     creds = get_credentials()
@@ -301,6 +312,7 @@ def put_data_into_sheets(message, thread_id, arguments):
         bot.send_message(message.chat.id,"Данные успешно загружены в таблицу")
     else:
         bot.send_message(message.chat.id,"Возникла проблема с внесением данных в таблицу")
+
 #загрузка изображения в гугл диск, возвращает ссылку
 def upload_to_drive(file_name, file_data):
     creds = get_credentials()
@@ -321,36 +333,86 @@ def upload_to_drive(file_name, file_data):
     link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
 
     return link
-#добавляет ссылку на изображение в гугл диск
-def update_google_sheet(thread_id, link):
-    creds=get_credentials()
 
-    # Подключение к Google Sheets API
+# Находим номер следующего пустого столбца
+def find_next_empty_column(service, spreadsheet_id, row_number, start_col_letter):
+    # Определяем номер стартового столбца
+    start_col_index = ord(start_col_letter) - ord('A') + 1
+    #print(start_col_index)
+    # Формируем диапазон для получения данных от стартового столбца до конца строки
+    range_name = f'Sheet1!{start_col_letter}{row_number}:Z{row_number}'
+    #print(f"Запрашиваем диапазон: {range_name}")
+    result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+    
+    # Получаем значения строки
+    row_values = result.get('values', [[]])
+    #print(f"Полученные значения: {row_values}")
+    
+    # Если строка не пуста, используем значения, иначе создаем пустой список нужной длины
+    if row_values and row_values[0]:
+        row_values = row_values[0]
+    else:
+        # Создаем список длиной от стартового столбца до конца (например, до Z)
+        row_values = [''] * (26 - (start_col_index - 1))  # Количество столбцов от стартового до Z
+    
+    # Печатаем значения строки для отладки
+    #print(f"Значения строки: {row_values}")
+    
+    # Ищем первую пустую ячейку после стартового столбца
+    for i in range(start_col_index - 1, len(row_values)):
+        if not row_values[i]:  # Проверяем на пустое значение
+            print(f"Первая пустая ячейка: {i + 1}")
+            return i + 1  # Возвращаем индекс первой пустой ячейки
+    
+    # Если не найдено пустых ячеек, возвращаем следующий столбец после последнего
+    next_col = len(row_values) + 8
+    #print(f"Следующий столбец после последнего заполненного: {next_col}")
+    return next_col
+
+# Заносим данные в строку
+def insert_data_in_row(service, spreadsheet_id, data, row_number, start_col_letter):
+    # Найти первую пустую ячейку
+    next_empty_col = find_next_empty_column(service, spreadsheet_id, row_number, start_col_letter)
+    
+    # Определить диапазон для вставки данных
+    end_col = next_empty_col + len(data) - 1
+    range_name = f'Sheet1!{chr(ord("A") + next_empty_col - 1)}{row_number}:{chr(ord("A") + end_col - 1)}{row_number}'
+    
+    body = {
+        'values': [data]
+    }
+    
+    result = service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id, range=range_name,
+        valueInputOption='RAW', body=body).execute()
+    return result
+
+# Добавляем ссылку на гугл диск
+def update_google_sheet(thread_id, link):
+    creds = get_credentials()
     service = build('sheets', 'v4', credentials=creds)
+    spreadsheet_id = os.getenv('SPREADSHEET_ID')  # Замените на ваш идентификатор таблицы
 
     # Чтение данных из таблицы
-    sheet = service.spreadsheets().values().get(spreadsheetId=spread_sheet_id, range='Sheet1!B:H').execute()
-    values = sheet.get('values', [])
-
-    # Поиск строки с нужным thread_id
+    range_name = 'Sheet1!A:Z'
+    result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+    values = result.get('values', [])
+    
+    start_col_letter = 'H'
     row_number = None
+    
+    # Поиск строки с нужным thread_id
     for i, row in enumerate(values):
-        if row and row[0] == thread_id:
+        if row and row[1] == thread_id:
             row_number = i + 1  # Нумерация строк начинается с 1
             break
-
+    print(row_number)
     if row_number is not None:
-        # Обновление ячейки в столбце G (6-й столбец)
-        range_name = f'Sheet1!H{row_number}'
-        body = {
-            'values': [[link]]
-        }
-        result = service.spreadsheets().values().update(
-            spreadsheetId=spread_sheet_id, range=range_name,
-            valueInputOption='RAW', body=body).execute()
-        return result
+        insert_data_in_row(service, spreadsheet_id, [link], row_number, start_col_letter)
+        return "ok"
     else:
         return "thread_id не найден"
+
 #создание новой строки в гугл таблице
 def create_new_row(username, thread_id):
     creds=get_credentials()
@@ -379,13 +441,15 @@ openai.api_key=os.getenv('OPENAI_API_KEY')
 openai_api_key=os.getenv('OPENAI_API_KEY')
 tg_api_token=os.getenv('TG_API_TOKEN_CAR')
 bot = telebot.TeleBot(tg_api_token)
-assistant_id=os.geten('ASSISTANTS_ID_CAR')
+assistant_id=os.getenv('ASSISTANTS_ID_CAR')
 client = openai.OpenAI()
+
 # Сохранение состояния для пользователей (хранение сессий)
 user_threads = {}
 
 # Определите область доступа
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file']
+
 # Путь к вашему файлу с учетными данными
 CREDS_FILE = 'credentials.json'
 TOKEN_FILE = 'token.json'
