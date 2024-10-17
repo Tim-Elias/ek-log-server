@@ -11,6 +11,8 @@ import os
 
 app = Flask(__name__)
 
+load_dotenv()
+
 s3 = boto3.client(
         's3',
         endpoint_url=os.getenv('ENDPOINT_URL'),
